@@ -9,16 +9,17 @@ import (
 )
 
 type client struct {
-	name    string
-	from    string
-	payload string
+	name string
+	from string
+	conn net.Conn
 }
 
 type server struct {
 	listenAddr string
 	ln         net.Listener
 	quitch     chan struct{}
-	msgs       chan client
+	msgs       chan string
+	clients    map[net.Conn]client // Map to store all active clients
 }
 
 // Create a new server with a listener address
@@ -26,7 +27,8 @@ func NewServer(listenAddr string) *server {
 	return &server{
 		listenAddr: listenAddr,
 		quitch:     make(chan struct{}),
-		msgs:       make(chan client, 10),
+		msgs:       make(chan string, 10),
+		clients:    make(map[net.Conn]client), // Initialize the clients map
 	}
 }
 
@@ -56,16 +58,26 @@ func (s *server) accept() {
 			continue
 		}
 
-		fmt.Println("Listening on thr port", s.listenAddr)
+		fmt.Println("Listening on the port", s.listenAddr)
 		go s.handleConnection(conn) // Handle client in a goroutine
 	}
 }
+
+// Broadcast messages to all connected clients
+func (s *server) broadcast(message string) {
+	for _, client := range s.clients {
+		client.conn.Write([]byte(message + "\n")) // Send message to each client
+	}
+}
+
 func (s *server) read(conn net.Conn, clientInfo client) {
 	reader := bufio.NewReader(conn)
 	for {
 		message, err := reader.ReadString('\n') // Read message until newline
 		if err != nil {
-			fmt.Println("read error:", err)
+			fmt.Printf("%s user left: %s", clientInfo.name, err)
+			s.broadcast(fmt.Sprintf("%s has left our chat...", clientInfo.name))
+			delete(s.clients, conn) // Remove the client from the active clients list
 			return
 		}
 		message = strings.TrimSpace(message)
@@ -73,12 +85,20 @@ func (s *server) read(conn net.Conn, clientInfo client) {
 		// Get the current timestamp
 		timestamp := time.Now().Format("2006-01-02 15:04:05")
 
-		// Send the message to the main server loop with client info and timestamp
-		s.msgs <- client{
-			name:    clientInfo.name,
-			from:    clientInfo.from,
-			payload: fmt.Sprintf("[%s][%s]: %s", timestamp, clientInfo.name, message),
+		if clientInfo.name == "Server"{
+		// Create the message payload in the requested format
+		formattedMessage := fmt.Sprintf("%s", message)
+				// Send the message to all connected clients
+				s.msgs <- formattedMessage
+		}else {
+		// Create the message payload in the requested format
+		formattedMessage := fmt.Sprintf("[%s][%s]: %s", timestamp, clientInfo.name, message)
+				// Send the message to all connected clients
+				s.msgs <- formattedMessage
 		}
+
+
+
 	}
 }
 
@@ -88,23 +108,23 @@ func (s *server) handleConnection(conn net.Conn) {
 
 	// Ask the client for their name
 	conn.Write([]byte("Welcome to TCP-Chat!\n"))
-conn.Write([]byte(
-	"         _nnnn_\n" +
-	"        dGGGGMMb\n" +
-	"       @p~qp~~qMb\n" +
-	"       M|@||@) M|\n" +
-	"       @,----.JM|\n" +
-	"      JS^\\__/  qKL\n" +
-	"     dZP        qKRb\n" +
-	"    dZP          qKKb\n" +
-	"   fZP            SMMb\n" +
-	"   HZM            MMMM\n" +
-	"   FqM            MMMM\n" +
-	" __| \".        |\\dS\"qML\n" +
-	" |    `.       | `' \\Zq\n" +
-	"_)      \\.___.,|     .'\n" +
-	"\\____   )MMMMMP|   .'\n" +
-	"     `-'       `--'\n"))
+	conn.Write([]byte(
+		    "         _nnnn_\n" +
+			"        dGGGGMMb\n" +
+			"       @p~qp~~qMb\n" +
+			"       M|@||@) M|\n" +
+			"       @,----.JM|\n" +
+			"      JS^\\__/  qKL\n" +
+			"     dZP        qKRb\n" +
+			"    dZP          qKKb\n" +
+			"   fZP            SMMb\n" +
+			"   HZM            MMMM\n" +
+			"   FqM            MMMM\n" +
+			" __| \".        |\\dS\"qML\n" +
+			" |    `.       | `' \\Zq\n" +
+			"_)      \\.___.,|     .'\n" +
+			"\\____   )MMMMMP|   .'\n" +
+			"     `-'       `--'\n"))
 	conn.Write([]byte("[ENTER YOUR NAME]: "))
 	name, err := bufio.NewReader(conn).ReadString('\n')
 	if err != nil {
@@ -116,24 +136,31 @@ conn.Write([]byte(
 	clientInfo := client{
 		name: name,
 		from: conn.RemoteAddr().String(),
+		conn: conn, // Store the client's connection
 	}
 
-	fmt.Printf("Client %s (%s) connected\n", clientInfo.name, clientInfo.from )
+	// Add the new client to the active clients list
+	s.clients[conn] = clientInfo
+
+	fmt.Printf("Client %s (%s) connected\n", clientInfo.name, clientInfo.from)
+
+	// Announce the new client to all other clients
+	s.broadcast(fmt.Sprintf("%s has joined our chat", clientInfo.name))
 
 	// Start reading messages from the client
 	s.read(conn, clientInfo)
 }
 
-// Read messages from the client
-
 func main() {
 	server := NewServer(":8989")
 
-	// Goroutine to print received messages from clients
+	// Goroutine to print and broadcast received messages from clients
 	go func() {
 		for msg := range server.msgs {
-			// Print the message in the requested format
-			fmt.Println(msg.payload)
+			// Print the message in the server console
+			fmt.Println(msg)
+			// Broadcast the message to all connected clients
+			server.broadcast(msg)
 		}
 	}()
 
