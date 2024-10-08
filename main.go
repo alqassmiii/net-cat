@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"net"
+	"os"
 	"strings"
 	"time"
 )
@@ -85,19 +86,17 @@ func (s *server) read(conn net.Conn, clientInfo client) {
 		// Get the current timestamp
 		timestamp := time.Now().Format("2006-01-02 15:04:05")
 
-		if clientInfo.name == "Server"{
-		// Create the message payload in the requested format
-		formattedMessage := fmt.Sprintf("%s", message)
-				// Send the message to all connected clients
-				s.msgs <- formattedMessage
-		}else {
-		// Create the message payload in the requested format
-		formattedMessage := fmt.Sprintf("[%s][%s]: %s", timestamp, clientInfo.name, message)
-				// Send the message to all connected clients
-				s.msgs <- formattedMessage
+		if clientInfo.name == "Server" {
+			// Create the message payload in the requested format
+			formattedMessage := fmt.Sprintf("%s", message)
+			// Send the message to all connected clients
+			s.msgs <- formattedMessage
+		} else {
+			// Create the message payload in the requested format
+			formattedMessage := fmt.Sprintf("[%s][%s]: %s", timestamp, clientInfo.name, message)
+			// Send the message to all connected clients
+			s.msgs <- formattedMessage
 		}
-
-
 
 	}
 }
@@ -109,7 +108,7 @@ func (s *server) handleConnection(conn net.Conn) {
 	// Ask the client for their name
 	conn.Write([]byte("Welcome to TCP-Chat!\n"))
 	conn.Write([]byte(
-		    "         _nnnn_\n" +
+		"         _nnnn_\n" +
 			"        dGGGGMMb\n" +
 			"       @p~qp~~qMb\n" +
 			"       M|@||@) M|\n" +
@@ -152,7 +151,14 @@ func (s *server) handleConnection(conn net.Conn) {
 }
 
 func main() {
-	server := NewServer(":8989")
+	var port string
+	if len(os.Args) == 1 {
+		port = ":8989"
+	} else {
+		port = ":" + os.Args[1]
+	}
+
+	server := NewServer(port)
 
 	// Goroutine to print and broadcast received messages from clients
 	go func() {
