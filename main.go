@@ -19,18 +19,32 @@ type server struct {
 	listenAddr string
 	ln         net.Listener
 	quitch     chan struct{}
-	msgs       chan string
-	clients    map[net.Conn]client // Map to store all active clients
+	msgs       chan clientMessage
+	clients    map[net.Conn]client
+	logFile    *os.File // File for logging messages
+}
+
+// Struct to hold the message and the sender connection
+type clientMessage struct {
+	message string
+	sender  net.Conn
 }
 
 // Create a new server with a listener address
-func NewServer(listenAddr string) *server {
+func NewServer(listenAddr string) (*server, error) {
+	// Open or create the log file
+	logFile, err := os.OpenFile("chat_logs.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return nil, fmt.Errorf("could not create log file: %v", err)
+	}
+
 	return &server{
 		listenAddr: listenAddr,
 		quitch:     make(chan struct{}),
-		msgs:       make(chan string, 10),
-		clients:    make(map[net.Conn]client), // Initialize the clients map
-	}
+		msgs:       make(chan clientMessage, 10),
+		clients:    make(map[net.Conn]client),
+		logFile:    logFile,
+	}, nil
 }
 
 // Start the server and listen for incoming connections
@@ -40,14 +54,27 @@ func (s *server) Start() error {
 		return err
 	}
 	defer ln.Close()
+	defer s.logFile.Close() // Ensure log file is closed when the server stops
 	s.ln = ln
 
-	go s.accept() // accept incoming connections
+	go s.accept()
 
 	<-s.quitch
 	close(s.msgs)
 
 	return nil
+}
+
+// Log a message to both the console and the log file
+func (s *server) logMessage(message string) {
+	// Log to the console
+	fmt.Println(message)
+	// Write to the log file
+	if _, err := s.logFile.WriteString(message + "\n"); err != nil {
+		fmt.Printf("error writing to log file: %v\n", err)
+	}
+	// Ensure the message is flushed to disk
+	s.logFile.Sync()
 }
 
 // Accept incoming client connections
@@ -60,44 +87,40 @@ func (s *server) accept() {
 		}
 
 		fmt.Println("Listening on the port", s.listenAddr)
-		go s.handleConnection(conn) // Handle client in a goroutine
+		go s.handleConnection(conn)
 	}
 }
 
-// Broadcast messages to all connected clients
-func (s *server) broadcast(message string) {
-	for _, client := range s.clients {
-		client.conn.Write([]byte(message + "\n")) // Send message to each client
+// Broadcast messages to all connected clients except the sender
+func (s *server) broadcast(message string, sender net.Conn) {
+	for conn, client := range s.clients {
+		if conn != sender {
+			client.conn.Write([]byte(message + "\n"))
+		}
 	}
 }
 
 func (s *server) read(conn net.Conn, clientInfo client) {
 	reader := bufio.NewReader(conn)
 	for {
-		message, err := reader.ReadString('\n') // Read message until newline
+		message, err := reader.ReadString('\n')
 		if err != nil {
-			fmt.Printf("%s user left: %s", clientInfo.name, err)
-			s.broadcast(fmt.Sprintf("%s has left our chat...", clientInfo.name))
-			delete(s.clients, conn) // Remove the client from the active clients list
+			exitMessage := fmt.Sprintf("%s user left: %s", clientInfo.name, err)
+			s.logMessage(exitMessage) // Log the disconnection
+			s.broadcast(fmt.Sprintf("%s has left our chat...", clientInfo.name), conn)
+			delete(s.clients, conn)
 			return
 		}
 		message = strings.TrimSpace(message)
 
-		// Get the current timestamp
 		timestamp := time.Now().Format("2006-01-02 15:04:05")
 
-		if clientInfo.name == "Server" {
-			// Create the message payload in the requested format
-			formattedMessage := fmt.Sprintf("%s", message)
-			// Send the message to all connected clients
-			s.msgs <- formattedMessage
-		} else {
-			// Create the message payload in the requested format
-			formattedMessage := fmt.Sprintf("[%s][%s]: %s", timestamp, clientInfo.name, message)
-			// Send the message to all connected clients
-			s.msgs <- formattedMessage
-		}
+		formattedMessage := fmt.Sprintf("[%s][%s]: %s", timestamp, clientInfo.name, message)
 
+		s.msgs <- clientMessage{
+			message: formattedMessage,
+			sender:  conn,
+		}
 	}
 }
 
@@ -105,7 +128,6 @@ func (s *server) read(conn net.Conn, clientInfo client) {
 func (s *server) handleConnection(conn net.Conn) {
 	defer conn.Close()
 
-	// Ask the client for their name
 	conn.Write([]byte("Welcome to TCP-Chat!\n"))
 	conn.Write([]byte(
 		"         _nnnn_\n" +
@@ -130,23 +152,21 @@ func (s *server) handleConnection(conn net.Conn) {
 		fmt.Println("error reading name:", err)
 		return
 	}
-	name = strings.TrimSpace(name) // Remove trailing newline or spaces
+	name = strings.TrimSpace(name)
 
 	clientInfo := client{
 		name: name,
 		from: conn.RemoteAddr().String(),
-		conn: conn, // Store the client's connection
+		conn: conn,
 	}
 
-	// Add the new client to the active clients list
 	s.clients[conn] = clientInfo
 
-	fmt.Printf("Client %s (%s) connected\n", clientInfo.name, clientInfo.from)
+	joinMessage := fmt.Sprintf("Client %s (%s) connected", clientInfo.name, clientInfo.from)
+	s.logMessage(joinMessage) // Log the connection event
 
-	// Announce the new client to all other clients
-	s.broadcast(fmt.Sprintf("%s has joined our chat", clientInfo.name))
+	s.broadcast(fmt.Sprintf("%s has joined our chat", clientInfo.name), conn)
 
-	// Start reading messages from the client
 	s.read(conn, clientInfo)
 }
 
@@ -158,20 +178,20 @@ func main() {
 		port = ":" + os.Args[1]
 	}
 
-	server := NewServer(port)
+	server, err := NewServer(port)
+	if err != nil {
+		fmt.Printf("Failed to start server: %v\n", err)
+		return
+	}
 
-	// Goroutine to print and broadcast received messages from clients
 	go func() {
 		for msg := range server.msgs {
-			// Print the message in the server console
-			fmt.Println(msg)
-			// Broadcast the message to all connected clients
-			server.broadcast(msg)
+			server.logMessage(msg.message) // Log the message
+			server.broadcast(msg.message, msg.sender)
 		}
 	}()
 
-	// Start the server
-	err := server.Start()
+	err = server.Start()
 	if err != nil {
 		fmt.Println("Server error:", err)
 	}
