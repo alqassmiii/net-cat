@@ -33,6 +33,7 @@ type clientMessage struct {
 // Create a new server with a listener address
 func NewServer(listenAddr string) (*server, error) {
 	// Open or create the log file
+	os.Remove("chat_logs.txt")
 	logFile, err := os.OpenFile("chat_logs.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return nil, fmt.Errorf("could not create log file: %v", err)
@@ -153,6 +154,15 @@ func (s *server) handleConnection(conn net.Conn) {
 		return
 	}
 	name = strings.TrimSpace(name)
+
+
+for _, clientInfo := range s.clients {
+	if clientInfo.name == name {
+		conn.Write([]byte("Name already taken. \n"))
+		conn.Close()
+		return
+	}
+}
 
 	clientInfo := client{
 		name: name,
