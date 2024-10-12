@@ -22,7 +22,7 @@ type server struct {
 	msgs       chan clientMessage
 	clients    map[net.Conn]client
 	logFile    *os.File // File for logging messages
-	oldMsgs    []string  // Slice to hold old messages
+	oldMsgs    []string // Slice to hold old messages
 
 }
 
@@ -38,7 +38,7 @@ func NewServer(listenAddr string) (*server, error) {
 	os.Remove("chat_logs.txt")
 	logFile, err := os.OpenFile("chat_logs.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		return nil, fmt.Errorf("could not create log file: %v", err)
+		return nil, fmt.Errorf("Could not create log file: %v", err)
 	}
 
 	return &server{
@@ -74,7 +74,7 @@ func (s *server) logMessage(message string) {
 	fmt.Println(message)
 	// Write to the log file
 	if _, err := s.logFile.WriteString(message + "\n"); err != nil {
-		fmt.Printf("error writing to log file: %v\n", err)
+		fmt.Printf("Error writing to log file: %v\n", err)
 	}
 	// Ensure the message is flushed to disk
 	s.logFile.Sync()
@@ -85,7 +85,7 @@ func (s *server) accept() {
 	for {
 		conn, err := s.ln.Accept()
 		if err != nil {
-			fmt.Println("accept error:", err)
+			fmt.Println("Accept error:", err)
 			continue
 		}
 
@@ -153,19 +153,18 @@ func (s *server) handleConnection(conn net.Conn) {
 	conn.Write([]byte("[ENTER YOUR NAME]: "))
 	name, err := bufio.NewReader(conn).ReadString('\n')
 	if err != nil {
-		fmt.Println("error reading name:", err)
+		fmt.Println("Error reading name:", err)
 		return
 	}
 	name = strings.TrimSpace(name)
 
-
-for _, clientInfo := range s.clients {
-	if clientInfo.name == name {
-		conn.Write([]byte("Name already taken. \n"))
-		conn.Close()
-		return
+	for _, clientInfo := range s.clients {
+		if clientInfo.name == name {
+			conn.Write([]byte("Sorry! The name you are trying to enter is already in use.\nPlease try to use another name."))
+			conn.Close()
+			return
+		}
 	}
-}
 
 	clientInfo := client{
 		name: name,
@@ -178,12 +177,12 @@ for _, clientInfo := range s.clients {
 	joinMessage := fmt.Sprintf("Client %s (%s) connected", clientInfo.name, clientInfo.from)
 	s.logMessage(joinMessage) // Log the connection event
 
-	s.broadcast(fmt.Sprintf("%s has joined our chat", clientInfo.name), conn)
-    
+	s.broadcast(fmt.Sprintf("%s has joined our chat...", clientInfo.name), conn)
+
 	for _, msg := range s.oldMsgs {
 		conn.Write([]byte(msg + "\n"))
 	}
-	
+
 	s.read(conn, clientInfo)
 }
 
@@ -194,7 +193,7 @@ func main() {
 	} else {
 		port = ":" + os.Args[1]
 	}
-
+	fmt.Println("Server is Running... :", port)
 	server, err := NewServer(port)
 	if err != nil {
 		fmt.Printf("Failed to start server: %v\n", err)
