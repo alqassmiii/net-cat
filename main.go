@@ -22,6 +22,8 @@ type server struct {
 	msgs       chan clientMessage
 	clients    map[net.Conn]client
 	logFile    *os.File // File for logging messages
+	oldMsgs    []string  // Slice to hold old messages
+
 }
 
 // Struct to hold the message and the sender connection
@@ -94,6 +96,7 @@ func (s *server) accept() {
 
 // Broadcast messages to all connected clients except the sender
 func (s *server) broadcast(message string, sender net.Conn) {
+	s.oldMsgs = append(s.oldMsgs, message)
 	for conn, client := range s.clients {
 		if conn != sender {
 			client.conn.Write([]byte(message + "\n"))
@@ -176,7 +179,11 @@ for _, clientInfo := range s.clients {
 	s.logMessage(joinMessage) // Log the connection event
 
 	s.broadcast(fmt.Sprintf("%s has joined our chat", clientInfo.name), conn)
-
+    
+	for _, msg := range s.oldMsgs {
+		conn.Write([]byte(msg + "\n"))
+	}
+	
 	s.read(conn, clientInfo)
 }
 
