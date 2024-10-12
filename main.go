@@ -175,7 +175,7 @@ for _, clientInfo := range s.clients {
 
 	s.clients[conn] = clientInfo
 
-	joinMessage := fmt.Sprintf("Client %s (%s) connected", clientInfo.name, clientInfo.from)
+	joinMessage := fmt.Sprintf("Client %s  connected", clientInfo.name)
 	s.logMessage(joinMessage) // Log the connection event
 
 	s.broadcast(fmt.Sprintf("%s has joined our chat", clientInfo.name), conn)
