@@ -38,7 +38,7 @@ func NewServer(listenAddr string) (*server, error) {
 	os.Remove("chat_logs.txt")
 	logFile, err := os.OpenFile("chat_logs.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		return nil, fmt.Errorf("Could not create log file: %v", err)
+		return nil, fmt.Errorf("could not create log file: %v", err)
 	}
 
 	return &server{
