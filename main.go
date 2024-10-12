@@ -193,7 +193,7 @@ func main() {
 	} else {
 		port = ":" + os.Args[1]
 	}
-	fmt.Println("Server is Running... :", port)
+	fmt.Println("Server is running... Port:", port)
 	server, err := NewServer(port)
 	if err != nil {
 		fmt.Printf("Failed to start server: %v\n", err)
