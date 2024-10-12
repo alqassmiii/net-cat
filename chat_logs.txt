@@ -1,4 +1,0 @@
-Client Qassim ([::1]:54885) connected
-[2024-10-10 16:37:44][Qassim]: hi
-Client Ahmed ([::1]:54886) connected
-[2024-10-10 16:37:58][Ahmed]: Hello
