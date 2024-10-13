@@ -14,7 +14,7 @@ func main() {
 		port = ":" + os.Args[1]
 	}
 	fmt.Println("Server is running... Port:", port)
-	server, err := netserver.NewServer(port)
+	server, err := netserver.NewServer(port,10)
 	if err != nil {
 		fmt.Printf("Failed to start server: %v\n", err)
 		return

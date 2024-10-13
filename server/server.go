@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -21,9 +22,10 @@ type server struct {
 	quitch     chan struct{}
 	Msgs       chan clientMessage
 	clients    map[net.Conn]client
-	logFile    *os.File // File for logging messages
-	oldMsgs    []string // Slice to hold old messages
-
+	logFile    *os.File   // File for logging messages
+	oldMsgs    []string   // Slice to hold old messages
+	maxClients int        // Maximum number of clients allowed
+	mu         sync.Mutex // Mutex for locking and unlocking
 }
 
 // Struct to hold the message and the sender connection
@@ -33,7 +35,7 @@ type clientMessage struct {
 }
 
 // Create a new server with a listener address
-func NewServer(listenAddr string) (*server, error) {
+func NewServer(listenAddr string, maxClients int) (*server, error) {
 	// Open or create the log file
 	os.Remove("chat_logs.txt")
 	logFile, err := os.OpenFile("chat_logs.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
@@ -41,13 +43,16 @@ func NewServer(listenAddr string) (*server, error) {
 		return nil, fmt.Errorf("could not create log file: %v", err)
 	}
 
-	return &server{
+	s := &server{
 		listenAddr: listenAddr,
 		quitch:     make(chan struct{}),
-		Msgs:       make(chan clientMessage, 10),
+		Msgs:       make(chan clientMessage),
 		clients:    make(map[net.Conn]client),
 		logFile:    logFile,
-	}, nil
+		maxClients: maxClients,
+	}
+
+	return s, nil
 }
 
 // Start the server and listen for incoming connections
@@ -83,26 +88,88 @@ func (s *server) LogMessage(message string) {
 // Accept incoming client connections
 func (s *server) accept() {
 	for {
-		if len(s.clients) >= 3 {
-			fmt.Println("Connection limit reached, rejecting new connections.")
-			continue
-		}
-
 		conn, err := s.ln.Accept()
 		if err != nil {
 			fmt.Println("Accept error:", err)
 			continue
 		}
 
-		if len(s.clients) >= 3 { // Double-check after accepting
-			conn.Write([]byte("Server is full, please try again later.\n"))
+		go s.handleNewConnection(conn)
+	}
+}
+
+// Function to handle new connections
+func (s *server) handleNewConnection(conn net.Conn) {
+	s.mu.Lock()
+	if len(s.clients) >= s.maxClients {
+		conn.Write([]byte("Maximum connection limit reached. Please try again later...\n"))
+		conn.Close()
+		s.mu.Unlock()
+		fmt.Println("Max clients reached. Connection refused.")
+		return
+	}
+	s.clients[conn] = client{conn: conn}
+	s.mu.Unlock()
+
+	// Handle the client connection
+	go s.handleClient(conn)
+}
+
+// Function to handle client communication
+func (s *server) handleClient(conn net.Conn) {
+	defer conn.Close()
+
+	conn.Write([]byte("Welcome to TCP-Chat!\n"))
+
+	logo, err := os.ReadFile("linuxlogo.txt")
+	if err != nil {
+		fmt.Println("Error reading logo file:", err)
+		return
+	}
+	conn.Write(logo)
+	conn.Write([]byte("\n[ENTER YOUR NAME]: "))
+	name, err := bufio.NewReader(conn).ReadString('\n')
+	if err != nil {
+		fmt.Println("Error reading name:", err)
+		return
+	}
+	name = strings.TrimSpace(name)
+
+	s.mu.Lock()
+	for _, clientInfo := range s.clients {
+		if name == "" {
+			conn.Write([]byte("Sorry! Empty name cant be accepted.\nDisconnected...\n"))
 			conn.Close()
-			continue
+			s.mu.Unlock()
+			return
+		} else if clientInfo.name == name {
+			conn.Write([]byte("Sorry! The name you are trying to enter is already in use.\nDisconnected...\n"))
+			conn.Close()
+			s.mu.Unlock()
+			return
 		}
 
-		fmt.Println("Listening on the port", s.listenAddr)
-		go s.handleConnection(conn)
 	}
+
+	clientInfo := client{
+		name: name,
+		from: conn.RemoteAddr().String(),
+		conn: conn,
+	}
+
+	s.clients[conn] = clientInfo
+	s.mu.Unlock()
+
+	joinMessage := fmt.Sprintf("Client %s  connected", clientInfo.name)
+	s.LogMessage(joinMessage) // Log the connection event
+
+	s.Broadcast(fmt.Sprintf("%s has joined our chat...", clientInfo.name), conn)
+
+	for _, msg := range s.oldMsgs {
+		conn.Write([]byte(msg + "\n"))
+	}
+
+	s.read(conn, clientInfo)
 }
 
 // Broadcast messages to all connected clients except the sender
@@ -123,7 +190,9 @@ func (s *server) read(conn net.Conn, clientInfo client) {
 			exitMessage := fmt.Sprintf("%s user left: %s", clientInfo.name, err)
 			s.LogMessage(exitMessage) // Log the disconnection
 			s.Broadcast(fmt.Sprintf("%s has left our chat...", clientInfo.name), conn)
+			s.mu.Lock()
 			delete(s.clients, conn)
+			s.mu.Unlock()
 			return
 		}
 		message = strings.TrimSpace(message)
@@ -137,53 +206,4 @@ func (s *server) read(conn net.Conn, clientInfo client) {
 			Sender:  conn,
 		}
 	}
-}
-
-// Handle each client connection
-func (s *server) handleConnection(conn net.Conn) {
-	defer conn.Close()
-
-	conn.Write([]byte("Welcome to TCP-Chat!\n"))
-
-	logo, err := os.ReadFile("linuxlogo.txt")
-	if err != nil {
-		fmt.Println("Error reading logo file:", err)
-		return
-	}
-	conn.Write(logo)
-	conn.Write([]byte("\n"))
-	conn.Write([]byte("[ENTER YOUR NAME]: "))
-	name, err := bufio.NewReader(conn).ReadString('\n')
-	if err != nil {
-		fmt.Println("Error reading name:", err)
-		return
-	}
-	name = strings.TrimSpace(name)
-
-	for _, clientInfo := range s.clients {
-		if clientInfo.name == name {
-			conn.Write([]byte("Sorry! The name you are trying to enter is already in use.\nPlease try to use another name."))
-			conn.Close()
-			return
-		}
-	}
-
-	clientInfo := client{
-		name: name,
-		from: conn.RemoteAddr().String(),
-		conn: conn,
-	}
-
-	s.clients[conn] = clientInfo
-
-	joinMessage := fmt.Sprintf("Client %s  connected", clientInfo.name)
-	s.LogMessage(joinMessage) // Log the connection event
-
-	s.Broadcast(fmt.Sprintf("%s has joined our chat...", clientInfo.name), conn)
-
-	for _, msg := range s.oldMsgs {
-		conn.Write([]byte(msg + "\n"))
-	}
-
-	s.read(conn, clientInfo)
 }
