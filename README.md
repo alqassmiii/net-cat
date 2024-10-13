@@ -16,8 +16,6 @@ Net-Cat is a simple TCP-based chat server implemented in Go. It allows multiple 
 ## Project Structure
 ```t
 net-cat/
-├── client/
-    └── client.go    # Client code
 ├── server/
     └── server.go    # Server code
 ├── main.go          # Main code
