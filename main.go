@@ -133,23 +133,14 @@ func (s *server) handleConnection(conn net.Conn) {
 	defer conn.Close()
 
 	conn.Write([]byte("Welcome to TCP-Chat!\n"))
-	conn.Write([]byte(
-		"         _nnnn_\n" +
-			"        dGGGGMMb\n" +
-			"       @p~qp~~qMb\n" +
-			"       M|@||@) M|\n" +
-			"       @,----.JM|\n" +
-			"      JS^\\__/  qKL\n" +
-			"     dZP        qKRb\n" +
-			"    dZP          qKKb\n" +
-			"   fZP            SMMb\n" +
-			"   HZM            MMMM\n" +
-			"   FqM            MMMM\n" +
-			" __| \".        |\\dS\"qML\n" +
-			" |    `.       | `' \\Zq\n" +
-			"_)      \\.___.,|     .'\n" +
-			"\\____   )MMMMMP|   .'\n" +
-			"     `-'       `--'\n"))
+	
+	logo, err := os.ReadFile("linuxlogo.txt")
+	if err != nil {
+		fmt.Println("Error reading logo file:", err)
+		return
+	}
+	conn.Write(logo)
+	conn.Write([]byte("\n"))
 	conn.Write([]byte("[ENTER YOUR NAME]: "))
 	name, err := bufio.NewReader(conn).ReadString('\n')
 	if err != nil {
