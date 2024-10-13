@@ -83,9 +83,20 @@ func (s *server) LogMessage(message string) {
 // Accept incoming client connections
 func (s *server) accept() {
 	for {
+		if len(s.clients) >= 3 {
+			fmt.Println("Connection limit reached, rejecting new connections.")
+			continue
+		}
+
 		conn, err := s.ln.Accept()
 		if err != nil {
 			fmt.Println("Accept error:", err)
+			continue
+		}
+
+		if len(s.clients) >= 3 { // Double-check after accepting
+			conn.Write([]byte("Server is full, please try again later.\n"))
+			conn.Close()
 			continue
 		}
 
