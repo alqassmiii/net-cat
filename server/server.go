@@ -108,7 +108,6 @@ func (s *server) handleNewConnection(conn net.Conn) {
 		fmt.Println("Max clients reached. Connection refused.")
 		return
 	}
-	s.clients[conn] = client{conn: conn}
 	s.mu.Unlock()
 
 	// Handle the client connection
@@ -131,44 +130,51 @@ func (s *server) handleClient(conn net.Conn) {
 	name, err := bufio.NewReader(conn).ReadString('\n')
 	if err != nil {
 		fmt.Println("Error reading name:", err)
+		conn.Close()
 		return
 	}
 	name = strings.TrimSpace(name)
 
+	// If the name is empty, close the connection before adding the client to the chat
+	if name == "" {
+		conn.Write([]byte("Sorry! Empty name can't be accepted.\nDisconnected...\n"))
+		conn.Close() // Immediately close the connection
+		return
+	}
+
 	s.mu.Lock()
+	// Check if the name is already in use
 	for _, clientInfo := range s.clients {
-		if name == "" {
-			conn.Write([]byte("Sorry! Empty name cant be accepted.\nDisconnected...\n"))
-			conn.Close()
-			s.mu.Unlock()
-			return
-		} else if clientInfo.name == name {
+		if clientInfo.name == name {
 			conn.Write([]byte("Sorry! The name you are trying to enter is already in use.\nDisconnected...\n"))
-			conn.Close()
+			conn.Close() // Close the connection if the name is taken
 			s.mu.Unlock()
 			return
 		}
-
 	}
+	s.mu.Unlock()
 
+	// Add the client to the clients map only after verifying their name
+	s.mu.Lock()
 	clientInfo := client{
 		name: name,
 		from: conn.RemoteAddr().String(),
 		conn: conn,
 	}
-
 	s.clients[conn] = clientInfo
 	s.mu.Unlock()
 
-	joinMessage := fmt.Sprintf("Client %s  connected", clientInfo.name)
+	joinMessage := fmt.Sprintf("Client %s connected", clientInfo.name)
 	s.LogMessage(joinMessage) // Log the connection event
 
 	s.Broadcast(fmt.Sprintf("%s has joined our chat...", clientInfo.name), conn)
 
+	// Send previous messages to the new client
 	for _, msg := range s.oldMsgs {
 		conn.Write([]byte(msg + "\n"))
 	}
 
+	// Start reading messages from the client
 	s.read(conn, clientInfo)
 }
 
@@ -182,6 +188,7 @@ func (s *server) Broadcast(message string, sender net.Conn) {
 	}
 }
 
+// Read messages from the client and broadcast them
 func (s *server) read(conn net.Conn, clientInfo client) {
 	reader := bufio.NewReader(conn)
 	for {
