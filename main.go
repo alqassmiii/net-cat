@@ -19,11 +19,11 @@ func main() {
 		}
 		port = ":" + os.Args[1] // Get the port from the command line
 	} else {
-		fmt.Println("Usage: go run main.go [Numeric port]") // Display usage information if the port is invalid
+		fmt.Println("Usage: go run main.go [Numeric port]") 
 		return
 	}
 	fmt.Println("Server is running on Port", port)
-	server, err := netserver.NewServer(port, 3) // Create a new server with the port and 10 max clients
+	server, err := netserver.NewServer(port, 10) // Create a new server and set the maximum number of clients
 	if err != nil {
 		fmt.Printf("Failed to start server: %v\n", err)
 		return
@@ -31,8 +31,8 @@ func main() {
 
 	go func() { // Start a goroutine to handle messages
 		for msg := range server.Msgs {
-			server.LogMessage(msg.Message)            // Log the message
-			server.Broadcast(msg.Message, msg.Sender) // Broadcast the message
+			server.LogMessage(msg.Message)           
+			server.Broadcast(msg.Message, msg.Sender) 
 		}
 	}()
 
