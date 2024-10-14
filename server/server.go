@@ -206,6 +206,9 @@ func (s *server) read(conn net.Conn, clientInfo client) {
 			return
 		}
 		message = strings.TrimSpace(message)
+		if message == "" {
+			continue;
+		}
 
 		timestamp := time.Now().Format("2006-01-02 15:04:05")
 
