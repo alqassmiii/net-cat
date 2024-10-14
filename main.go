@@ -23,7 +23,7 @@ func main() {
 		return
 	}
 	fmt.Println("Server is running on Port", port)
-	server, err := netserver.NewServer(port, 10) // Create a new server with the port and 10 max clients
+	server, err := netserver.NewServer(port, 3) // Create a new server with the port and 10 max clients
 	if err != nil {
 		fmt.Printf("Failed to start server: %v\n", err)
 		return
